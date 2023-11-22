@@ -5,7 +5,7 @@
  * (c) 2015 Tomofumi Hayashi
  * (c) 2019 Sven Auhagen
  * (c) 2019 Paul Chambers
- * (c) 2020-2022 Thomas Bernard
+ * (c) 2020-2023 Thomas Bernard
  *
  * This software is subject to the conditions detailed
  * in the LICENCE file provided within the distribution.
@@ -284,7 +284,7 @@ delete_filter_rule(const char * ifname, unsigned short port, int proto)
 
 	refresh_nft_cache_filter();
 	LIST_FOREACH(p, &head_filter, entry) {
-		if (p->eport == port && p->proto == proto && p->type == RULE_FILTER) {
+		if (p->dport == port && p->proto == proto && p->type == RULE_FILTER) {
 			r = rule_del_handle(p);
 			nft_send_rule(r, NFT_MSG_DELRULE, RULE_CHAIN_FILTER);
 			break;
@@ -310,10 +310,10 @@ delete_redirect_and_filter_rules(unsigned short eport, int proto)
 
 	// Delete Redirect Rule
 	LIST_FOREACH(p, &head_redirect, entry) {
-		if (p->eport == eport && p->proto == proto &&
+		if (p->dport == eport && p->proto == proto &&
 		    (p->type == RULE_NAT && p->nat_type == NFT_NAT_DNAT)) {
-			iaddr = p->iaddr;
-			iport = p->iport;
+			iaddr = p->nat_addr;
+			iport = p->nat_port;
 
 			r = rule_del_handle(p);
 			/* Todo: send bulk request */
@@ -326,8 +326,8 @@ delete_redirect_and_filter_rules(unsigned short eport, int proto)
 		refresh_nft_cache_filter();
 		// Delete Forward Rule
 		LIST_FOREACH(p, &head_filter, entry) {
-			if (p->eport == iport &&
-				p->iaddr == iaddr && p->type == RULE_FILTER) {
+			if (p->nat_port == iport &&
+				p->nat_addr == iaddr && p->type == RULE_FILTER) {
 				r = rule_del_handle(p);
 				/* Todo: send bulk request */
 				nft_send_rule(r, NFT_MSG_DELRULE, RULE_CHAIN_FILTER);
@@ -342,10 +342,10 @@ delete_redirect_and_filter_rules(unsigned short eport, int proto)
 	refresh_nft_cache_peer();
 	// Delete Peer Rule
 	LIST_FOREACH(p, &head_peer, entry) {
-		if (p->eport == eport && p->proto == proto &&
+		if (p->nat_port == eport && p->proto == proto &&
 		    (p->type == RULE_NAT && p->nat_type == NFT_NAT_SNAT)) {
-			iaddr = p->iaddr;
-			iport = p->iport;
+			iaddr = p->daddr;
+			iport = p->dport;
 
 			r = rule_del_handle(p);
 			/* Todo: send bulk request */
@@ -358,8 +358,8 @@ delete_redirect_and_filter_rules(unsigned short eport, int proto)
 		refresh_nft_cache_filter();
 		// Delete Forward Rule
 		LIST_FOREACH(p, &head_filter, entry) {
-			if (p->eport == iport &&
-				p->iaddr == iaddr && p->type == RULE_FILTER) {
+			if (p->dport == iport &&
+				p->daddr == iaddr && p->type == RULE_FILTER) {
 				r = rule_del_handle(p);
 				/* Todo: send bulk request */
 				nft_send_rule(r, NFT_MSG_DELRULE, RULE_CHAIN_FILTER);
@@ -397,18 +397,18 @@ get_peer_rule_by_index(int index,
 			}
 
 			if (eport != NULL) {
-				*eport = r->eport;
+				*eport = r->nat_port;
 			}
 
 			if (iaddr != NULL) {
-				if (inet_ntop(AF_INET, &r->iaddr, iaddr, iaddrlen) == NULL) {
+				if (inet_ntop(AF_INET, &r->daddr, iaddr, iaddrlen) == NULL) {
 					syslog(LOG_ERR, "%s: inet_ntop: %m",
 					       "get_peer_rule_by_index");
 				}
 			}
 
 			if (iport != NULL) {
-				*iport = r->iport;
+				*iport = r->dport;
 			}
 
 			if (proto != NULL) {
@@ -416,8 +416,8 @@ get_peer_rule_by_index(int index,
 			}
 
 			if (rhost != NULL) {
-				if (r->rhost) {
-					if (inet_ntop(AF_INET, &r->rhost, rhost, rhostlen) == NULL) {
+				if (r->saddr) {
+					if (inet_ntop(AF_INET, &r->saddr, rhost, rhostlen) == NULL) {
 						syslog(LOG_ERR, "%s: inet_ntop: %m",
 						       "get_peer_rule_by_index");
 					}
@@ -427,7 +427,7 @@ get_peer_rule_by_index(int index,
 			}
 
 			if (rport != NULL) {
-				*rport = r->rport;
+				*rport = r->sport;
 			}
 
 			if (desc != NULL) {
@@ -442,7 +442,7 @@ get_peer_rule_by_index(int index,
 			}
 
 			if (timestamp) {
-				*timestamp = get_timestamp(r->eport, r->proto);
+				*timestamp = get_timestamp(r->dport, r->proto);
 			}
 			/*
 			 * TODO: Implement counter in case of add {nat,filter}
@@ -516,18 +516,18 @@ get_redirect_rule_by_index(int index,
 			}
 
 			if (eport != NULL) {
-				*eport = r->eport;
+				*eport = r->dport;
 			}
 
 			if (iaddr != NULL) {
-				if (inet_ntop(AF_INET, &r->iaddr, iaddr, iaddrlen) == NULL) {
+				if (inet_ntop(AF_INET, &r->nat_addr, iaddr, iaddrlen) == NULL) {
 					syslog(LOG_ERR, "%s: inet_ntop: %m",
 					       "get_redirect_rule_by_index");
 				}
 			}
 
 			if (iport != NULL) {
-				*iport = r->iport;
+				*iport = r->nat_port;
 			}
 
 			if (proto != NULL) {
@@ -535,8 +535,8 @@ get_redirect_rule_by_index(int index,
 			}
 
 			if (rhost != NULL) {
-				if (r->rhost) {
-					if (inet_ntop(AF_INET, &r->rhost, rhost, rhostlen) == NULL) {
+				if (r->saddr) {
+					if (inet_ntop(AF_INET, &r->saddr, rhost, rhostlen) == NULL) {
 						syslog(LOG_ERR, "%s: inet_ntop: %m",
 						       "get_redirect_rule_by_index");
 					}
@@ -596,10 +596,10 @@ get_nat_redirect_rule(const char * nat_chain_name, const char * ifname,
 
 	LIST_FOREACH(p, &head_redirect, entry) {
 		if (p->proto == proto &&
-		    p->eport == eport) {
+		    p->dport == eport) {
 
-			if (p->iaddr && iaddr) {
-				addr.s_addr = p->iaddr;
+			if (p->nat_addr && iaddr) {
+				addr.s_addr = p->nat_addr;
 				if (inet_ntop(AF_INET, &addr, iaddr, iaddrlen) == NULL) {
 					syslog(LOG_ERR, "%s: inet_ntop: %m",
 					       "get_nat_redirect_rule");
@@ -611,7 +611,7 @@ get_nat_redirect_rule(const char * nat_chain_name, const char * ifname,
 			}
 
 			if (iport)
-				*iport = p->iport;
+				*iport = p->nat_port;
 
 			if(timestamp != NULL)
 				*timestamp = get_timestamp(eport, proto);
@@ -651,8 +651,8 @@ get_portmappings_in_range(unsigned short startport, unsigned short endport,
 
 	LIST_FOREACH(p, &head_redirect, entry) {
 		if (p->proto == proto &&
-		    startport <= p->eport &&
-		    p->eport <= endport) {
+		    startport <= p->dport &&
+		    p->dport <= endport) {
 
 			if (*number >= capacity) {
 				capacity += 128;
@@ -669,7 +669,7 @@ get_portmappings_in_range(unsigned short startport, unsigned short endport,
 				}
 				array = tmp;
 			}
-			array[*number] = p->eport;
+			array[*number] = p->dport;
 			(*number)++;
 		}
 	}

@@ -6,6 +6,10 @@ on:
       - master
       - test
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   windows:
     runs-on: windows-latest
